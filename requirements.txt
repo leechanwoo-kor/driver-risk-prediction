@@ -1,0 +1,8 @@
+# 평가 서버 기본 설치 패키지 (requirements.txt에 포함하지 않음):
+# - pandas==2.2.2
+# - numpy==1.26.4
+# - scikit-learn==1.5.2 (joblib 포함)
+# - pyyaml==6.0.2
+
+# 추가 설치 필요 패키지만 명시
+xgboost>=3.0.5

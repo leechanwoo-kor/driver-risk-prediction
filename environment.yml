@@ -1,0 +1,23 @@
+name: driver-risk
+channels:
+  - conda-forge
+dependencies:
+  # 평가 서버 환경 기준 (Ubuntu 22.04.5 LTS, Python 3.10.12)
+  - python=3.10.12
+  
+  # 평가 서버 기본 설치 패키지 (버전 일치)
+  - numpy=1.26.4
+  - pandas=2.2.2
+  - scikit-learn=1.5.2
+  - pyyaml=6.0.2
+  
+  # 추가 설치 필요 패키지
+  - lightgbm>=4.3.0
+  - xgboost>=3.0.5
+  - joblib>=1.4.0
+  
+  # 개발용 도구 (서버에는 없지만 로컬 개발에 필요)
+  - ipykernel
+  - notebook
+  - matplotlib>=3.8
+  - seaborn>=0.13

@@ -1,0 +1,25 @@
+# Python / Conda
+.venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info
+*.log
+
+# Data
+/data/
+*.zip
+/submission.csv
+
+# model (versioned directories)
+model/
+!model/LATEST_VERSION.txt
+# Keep metadata and results for version tracking
+!model/*/metadata.json
+!model/*/summary.json
+!model/*/results_*.json
+!model/*/feature_cols_*.json
+
+# submission
+baseline_submit/
+submission/
