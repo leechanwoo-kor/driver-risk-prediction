@@ -6,7 +6,12 @@ __pycache__/
 *.egg-info
 *.log
 
+# Environment snapshots (포함하여 재현성 보장)
+# environment_lock.yml
+# conda_packages.txt
+
 # Data
+/docs/
 /data/
 *.zip
 /submission.csv

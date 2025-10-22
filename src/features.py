@@ -8,6 +8,7 @@ log = get_logger("features")
 
 ID_COLS = {"Test_id", "Test", "PrimaryKey"}
 META_COLS = {"Age", "TestDate"}
+
 # Sequence columns to drop after feature engineering
 SEQ_COLS_A = [
     "A1-1", "A1-2", "A1-3", "A1-4",
@@ -27,6 +28,7 @@ SEQ_COLS_B = [
 
 
 def parse_age_bucket(v):
+    """Parse age bucket (e.g., '20a' -> 22, '20b' -> 27)."""
     if not isinstance(v, str):
         return np.nan
     s = v.strip()
@@ -36,44 +38,30 @@ def parse_age_bucket(v):
     return base + (2 if suf == "a" else 7)
 
 
-def expand_date(df: pd.DataFrame, col: str) -> pd.DataFrame:
-    # TEMPORAL FEATURES REMOVED: TestDate_year/month cause distribution shift
-    # Baseline (Public LB 0.19067) doesn't use temporal features
-    # Train: 2018-2022, Test: 2023 (out-of-distribution)
-    return df
-
-
 def build_features(
     df: pd.DataFrame, use_cols_json: Path | None = None
 ) -> tuple[pd.DataFrame, list[str]]:
-    """
-    Build features with advanced sequence-based engineering.
-    Detects Test type from 'Test' column or columns present.
-    """
+    """Build features with sequence-based engineering."""
     out = df.copy()
 
     # Basic derived features
     log.info("Creating basic derived features...")
     if "Age" in out.columns:
         out["Age_mid"] = out["Age"].map(parse_age_bucket)
-    out = expand_date(out, "TestDate")
-    # Note: TestDate_q removed (importance = 0.0105 < 0.01)
 
-    # Advanced sequence-based features
-    # Determine test type: prefer 'Test' column, fallback to column detection
+    # Detect test type
     log.info("Detecting test type...")
     test_type = None
     if "Test" in out.columns:
-        # If Test column exists, check unique values
         unique_tests = out["Test"].unique()
         if len(unique_tests) == 1:
             test_type = unique_tests[0]
 
     # Fallback: detect by column presence
     if test_type is None:
-        if any(col in out.columns for col in SEQ_COLS_A) and not any(col in out.columns for col in SEQ_COLS_B):
+        if any(col in out.columns for col in SEQ_COLS_A):
             test_type = "A"
-        elif any(col in out.columns for col in SEQ_COLS_B) and not any(col in out.columns for col in SEQ_COLS_A):
+        elif any(col in out.columns for col in SEQ_COLS_B):
             test_type = "B"
 
     # Apply test-specific feature engineering
@@ -90,11 +78,6 @@ def build_features(
         out = pd.concat([out, advanced_feats], axis=1)
         out = out.drop(columns=[c for c in SEQ_COLS_B if c in out.columns])
 
-    # Temporal features (REMOVED: causes distribution shift)
-    # log.info("Creating temporal features...")
-    # if "TestDate_year" in out.columns and "TestDate_month" in out.columns:
-    #     out["YearMonthIndex"] = out["TestDate_year"] * 12 + out["TestDate_month"]
-
     # Feature selection
     log.info("Selecting and finalizing features...")
     if use_cols_json and use_cols_json.exists():
@@ -107,17 +90,6 @@ def build_features(
             for c in out.columns
             if c not in excl and pd.api.types.is_numeric_dtype(out[c])
         ]
-        
-        # Remove cross-contamination: exclude opposite test's raw columns
-        if test_type == "A":
-            # Remove B raw columns from Test A features
-            b_raw_cols = [f"B{i}-{j}" for i in range(1, 11) for j in range(1, 10)]
-            b_raw_cols.extend(["B6", "B7", "B8"])
-            feats = [f for f in feats if f not in b_raw_cols]
-        elif test_type == "B":
-            # Remove A raw columns from Test B features
-            a_raw_cols = [f"A{i}-{j}" for i in range(1, 10) for j in range(1, 10)]
-            feats = [f for f in feats if f not in a_raw_cols]
 
     # Missing value imputation (median)
     if feats:
