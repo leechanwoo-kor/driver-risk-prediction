@@ -91,6 +91,14 @@ def build_features(
             if c not in excl and pd.api.types.is_numeric_dtype(out[c])
         ]
 
+        # Remove cross-contamination: exclude opposite test's columns
+        if test_type == "A":
+            # Remove all B columns from Test A features
+            feats = [f for f in feats if not f.startswith('B')]
+        elif test_type == "B":
+            # Remove all A columns from Test B features (except Age_mid)
+            feats = [f for f in feats if not f.startswith('A') or f == 'Age_mid']
+
     # Missing value imputation (median)
     if feats:
         out[feats] = out[feats].fillna(out[feats].median())

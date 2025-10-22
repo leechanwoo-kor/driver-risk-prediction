@@ -9,8 +9,7 @@ from sklearn.metrics import roc_auc_score
 from .config import load_config
 from .utils.logging import get_logger
 from .utils.seed import set_seed
-from .data import load_frames, merge_train
-from .features import build_features
+from .data import load_frames, merge_train, prepare_data_for_test, load_prepared_data
 from .models.xgb import XGBWrapper
 from .metrics import brier_score, ece_score
 
@@ -20,26 +19,20 @@ def _logit(p):
     return np.log(p / (1 - p))
 
 
-def train_one_flag(df: pd.DataFrame, cfg, flag: str, n_splits: int = 5):
+def train_one_flag(
+    X: pd.DataFrame,
+    y: pd.Series,
+    feats: list[str],
+    cfg,
+    flag: str,
+    n_splits: int = 5
+):
     log = get_logger(f"train:{flag}")
     log.info(f"Starting training for Test {flag}")
-    
-    col = cfg.columns
-    data = df[df[col["test"]] == flag].copy()
-    log.info(f"Test {flag} data: {len(data)} samples")
-    
-    y = data[col["target"]].astype(int).values
-    data.drop(columns=[col["target"]], inplace=True)
+    log.info(f"Test {flag} data: {len(X)} samples, {len(feats)} features")
 
     model_dir = cfg.model_dir
-    use_cols_json = model_dir / f"feature_cols_{flag}.json"
-    
-    log.info(f"Building features for Test {flag}...")
-    fe_out, feats = build_features(data, use_cols_json=use_cols_json)
-    log.info(f"Features built: {len(feats)} features")
-    
-    # Use DataFrame directly to preserve feature names
-    X = fe_out[feats]
+    y = y.values  # Convert to numpy array for sklearn
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cfg.random_seed)
     oof = np.zeros(len(X), dtype=float)
@@ -105,12 +98,14 @@ def main(argv=None):
     ap.add_argument("--config", required=True)
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--version", type=str, default=None, help="Version name (default: timestamp)")
+    ap.add_argument("--prepared-data", type=str, default=None,
+                    help="Path to prepared data directory (skip feature engineering)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
     set_seed(cfg.random_seed)
     log = get_logger("train")
-    
+
     # Create versioned model directory
     if args.version:
         version_name = args.version
@@ -119,18 +114,18 @@ def main(argv=None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = cfg.model.get("name", "model")
         version_name = f"{model_name}_{timestamp}"
-    
+
     # Create versioned directory
     base_model_dir = cfg.model_dir
     versioned_model_dir = base_model_dir / version_name
     versioned_model_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Override config model_dir with versioned path
     cfg.paths["model_dir"] = str(versioned_model_dir)
-    
+
     log.info(f"Model version: {version_name}")
     log.info(f"Saving models to: {versioned_model_dir}")
-    
+
     # Save training metadata
     metadata = {
         "version": version_name,
@@ -139,31 +134,49 @@ def main(argv=None):
         "n_folds": args.folds,
         "random_seed": cfg.random_seed,
         "config_file": args.config,
+        "used_prepared_data": args.prepared_data is not None,
     }
     with open(versioned_model_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
-    
-    log.info("Loading data frames...")
-    train_idx, _test_idx, A, B, _ = load_frames(cfg.data_dir)
-    log.info("Merging train data...")
-    df = merge_train(train_idx, A, B)
-    log.info(f"Data loaded: {len(df)} rows")
 
     # Store results for summary
     all_results = {}
-    
-    for flag in ("A", "B"):
-        result = train_one_flag(
-            df.assign(Label=df[cfg.columns["target"]]), cfg, flag, n_splits=args.folds
-        )
-        all_results[flag] = result
+
+    # Load or prepare data
+    if args.prepared_data:
+        # Use pre-prepared data (fast path)
+        prepared_dir = Path(args.prepared_data)
+        log.info(f"Using prepared data from: {prepared_dir}")
+
+        for flag in ("A", "B"):
+            X, feats, y = load_prepared_data(prepared_dir, flag)
+            result = train_one_flag(X, y, feats, cfg, flag, n_splits=args.folds)
+            all_results[flag] = result
+    else:
+        # Prepare data on-the-fly (original behavior)
+        log.info("Loading and preparing data from scratch...")
+        train_idx, test_idx, A, B, _ = load_frames(cfg.data_dir)
+        df = merge_train(train_idx, A, B)
+        log.info(f"Data loaded: {len(df)} rows")
+
+        for flag in ("A", "B"):
+            fe_out, feats, y = prepare_data_for_test(
+                df.assign(Label=df[cfg.columns["target"]]),
+                cfg,
+                flag,
+                output_dir=None  # Don't save intermediate data
+            )
+            X = fe_out[feats]
+            result = train_one_flag(X, y, feats, cfg, flag, n_splits=args.folds)
+            all_results[flag] = result
 
     # Save overall summary
+    total_samples = sum(r.get("n_samples", 0) for r in all_results.values())
     summary = {
         "version": version_name,
         "timestamp": metadata["timestamp"],
         "model_name": cfg.model.get("name", "unknown"),
-        "total_samples": len(df),
+        "total_samples": total_samples,
         "test_A": all_results.get("A", {}),
         "test_B": all_results.get("B", {}),
         "overall_score": (
