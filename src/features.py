@@ -39,9 +39,20 @@ def parse_age_bucket(v):
 
 
 def build_features(
-    df: pd.DataFrame, use_cols_json: Path | None = None
-) -> tuple[pd.DataFrame, list[str]]:
-    """Build features with sequence-based engineering."""
+    df: pd.DataFrame, use_cols_json: Path | None = None, impute_values: dict | None = None
+) -> tuple[pd.DataFrame, list[str], dict]:
+    """Build features with sequence-based engineering.
+
+    Args:
+        df: Input dataframe
+        use_cols_json: Path to feature columns JSON (optional)
+        impute_values: Pre-computed imputation values for inference (optional)
+
+    Returns:
+        out: Dataframe with engineered features
+        feats: List of feature column names
+        impute_stats: Dictionary of imputation values (median for each feature)
+    """
     out = df.copy()
 
     # Basic derived features
@@ -100,7 +111,17 @@ def build_features(
             feats = [f for f in feats if not f.startswith('A') or f == 'Age_mid']
 
     # Missing value imputation (median)
+    impute_stats = {}
     if feats:
-        out[feats] = out[feats].fillna(out[feats].median())
+        if impute_values is not None:
+            # Use provided imputation values (inference mode)
+            for feat in feats:
+                if feat in impute_values:
+                    out[feat] = out[feat].fillna(impute_values[feat])
+        else:
+            # Compute imputation values from training data
+            medians = out[feats].median()
+            impute_stats = medians.to_dict()
+            out[feats] = out[feats].fillna(medians)
 
-    return out, feats
+    return out, feats, impute_stats

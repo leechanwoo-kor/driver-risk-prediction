@@ -57,7 +57,7 @@ def prepare_data_for_test(
     data.drop(columns=[col["target"]], inplace=True)
 
     log.info(f"Building features for Test {flag}...")
-    fe_out, feats = build_features(data, use_cols_json=use_cols_json)
+    fe_out, feats, impute_stats = build_features(data, use_cols_json=use_cols_json)
     log.info(f"Features built: {len(feats)} features")
 
     # Save preprocessed data if output_dir is specified
@@ -79,6 +79,15 @@ def prepare_data_for_test(
             encoding="utf-8"
         )
         log.info(f"Saved feature columns to {feature_cols_path}")
+
+        # Save imputation statistics
+        if impute_stats:
+            impute_path = output_dir / f"impute_stats_{flag}.json"
+            impute_path.write_text(
+                json.dumps(impute_stats, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+            log.info(f"Saved imputation statistics to {impute_path}")
 
     return fe_out, feats, y
 

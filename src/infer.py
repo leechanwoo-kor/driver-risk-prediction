@@ -14,9 +14,15 @@ def _logit(p):
 
 
 def predict_flag(
-    part: pd.DataFrame, model_dir: Path, flag: str, feats_json: Path
+    part: pd.DataFrame, model_dir: Path, flag: str, feats_json: Path, impute_json: Path
 ) -> pd.Series:
-    fe_out, feats = build_features(part, use_cols_json=feats_json)
+    # Load imputation statistics
+    if impute_json.exists():
+        impute_values = json.loads(impute_json.read_text(encoding="utf-8"))
+    else:
+        impute_values = None
+
+    fe_out, feats, _ = build_features(part, use_cols_json=feats_json, impute_values=impute_values)
     # Use DataFrame directly to preserve feature names
     X = fe_out[feats]
 
@@ -84,6 +90,7 @@ def main(argv=None):
             cfg.model_dir,
             flag,
             cfg.model_dir / f"feature_cols_{flag}.json",
+            cfg.model_dir / f"impute_stats_{flag}.json",
         )
         outs.append(
             pd.DataFrame(

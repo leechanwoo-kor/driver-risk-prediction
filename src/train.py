@@ -152,6 +152,14 @@ def main(argv=None):
             X, feats, y = load_prepared_data(prepared_dir, flag)
             result = train_one_flag(X, y, feats, cfg, flag, n_splits=args.folds)
             all_results[flag] = result
+
+            # Copy imputation statistics to model directory
+            impute_src = prepared_dir / f"impute_stats_{flag}.json"
+            if impute_src.exists():
+                import shutil
+                impute_dst = versioned_model_dir / f"impute_stats_{flag}.json"
+                shutil.copy(impute_src, impute_dst)
+                log.info(f"Copied imputation statistics to {impute_dst}")
     else:
         # Prepare data on-the-fly (original behavior)
         log.info("Loading and preparing data from scratch...")
