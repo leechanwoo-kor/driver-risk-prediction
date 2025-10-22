@@ -37,9 +37,9 @@ def predict_flag(
         preds.append(p)
     avg = np.mean(preds, axis=0) if preds else np.zeros(len(X))
 
-    # Platt 보정
+    # Isotonic 보정
     cal = joblib.load(model_dir / f"cal_{flag}.pkl")
-    p_final = cal.predict_proba(_logit(avg).reshape(-1, 1))[:, 1]
+    p_final = cal.predict(avg)
     return pd.Series(np.clip(p_final, 1e-8, 1 - 1e-8), index=part.index, dtype=float)
 
 

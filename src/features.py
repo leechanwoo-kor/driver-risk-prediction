@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 import json, numpy as np, pandas as pd
-from .feature_engineering import engineer_A_features, engineer_B_features
+from .feature_engineering_fast import engineer_A_features_fast, engineer_B_features_fast
 from .utils.logging import get_logger
 
 log = get_logger("features")
@@ -78,13 +78,13 @@ def build_features(
     # Apply test-specific feature engineering
     if test_type == "A":
         log.info("Engineering Test A sequence features...")
-        advanced_feats = engineer_A_features(out)
+        advanced_feats = engineer_A_features_fast(out)
         log.info(f"Created {len(advanced_feats.columns)} advanced features")
         out = pd.concat([out, advanced_feats], axis=1)
         out = out.drop(columns=[c for c in SEQ_COLS_A if c in out.columns])
     elif test_type == "B":
         log.info("Engineering Test B sequence features...")
-        advanced_feats = engineer_B_features(out)
+        advanced_feats = engineer_B_features_fast(out)
         log.info(f"Created {len(advanced_feats.columns)} advanced features")
         out = pd.concat([out, advanced_feats], axis=1)
         out = out.drop(columns=[c for c in SEQ_COLS_B if c in out.columns])

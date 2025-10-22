@@ -14,6 +14,7 @@ columns:
 
 model:
   name: xgb
+  type: xgb               # xgb or catboost
   per_test: true          # A/B 별 개별 모델
   params:
     # XGBoost parameters

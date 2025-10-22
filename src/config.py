@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
@@ -9,6 +9,7 @@ class Cfg:
     paths: dict
     columns: dict
     model: dict
+    validation: dict = field(default_factory=dict)
 
     @property
     def data_dir(self) -> Path: return Path(self.paths["data_dir"])

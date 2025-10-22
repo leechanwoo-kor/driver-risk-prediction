@@ -1,0 +1,27 @@
+random_seed: 42
+
+paths:
+  data_dir: data
+  model_dir: model
+
+columns:
+  id: Test_id
+  test: Test
+  target: Label
+  group: PrimaryKey
+  age: Age
+  date: TestDate
+
+model:
+  name: catboost
+  type: catboost  # xgb or catboost
+  per_test: true
+  params:
+    iterations: 300
+    learning_rate: 0.05
+    depth: 6
+    l2_leaf_reg: 3
+    random_seed: 42
+    verbose: False
+    allow_writing_files: False
+    task_type: CPU

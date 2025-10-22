@@ -5,12 +5,15 @@ from datetime import datetime
 import joblib, numpy as np, pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import roc_auc_score
 from .config import load_config
 from .utils.logging import get_logger
 from .utils.seed import set_seed
 from .data import load_frames, merge_train, prepare_data_for_test, load_prepared_data
 from .models.xgb import XGBWrapper
+from .models.catboost_model import CatBoostWrapper
+from .models.lgbm import LGBMWrapper
 from .metrics import brier_score, ece_score
 
 
@@ -25,7 +28,9 @@ def train_one_flag(
     feats: list[str],
     cfg,
     flag: str,
-    n_splits: int = 5
+    n_splits: int = 5,
+    use_time_split: bool = False,
+    test_ratio: float = 0.2
 ):
     log = get_logger(f"train:{flag}")
     log.info(f"Starting training for Test {flag}")
@@ -34,13 +39,36 @@ def train_one_flag(
     model_dir = cfg.model_dir
     y = y.values  # Convert to numpy array for sklearn
 
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cfg.random_seed)
-    oof = np.zeros(len(X), dtype=float)
+    # Choose validation strategy
+    if use_time_split:
+        # Time-based split: use most recent data as validation
+        log.info(f"Using time-based split (last {test_ratio*100:.0f}% as validation)")
+        # Assume index is sorted by TestDate
+        split_idx = int(len(X) * (1 - test_ratio))
+        train_idx = np.arange(split_idx)
+        val_idx = np.arange(split_idx, len(X))
+        splits = [(train_idx, val_idx)]
+        oof = np.zeros(len(X), dtype=float)
+    else:
+        # StratifiedKFold
+        log.info(f"Using StratifiedKFold (n_splits={n_splits})")
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=cfg.random_seed)
+        splits = skf.split(X, y)
+        oof = np.zeros(len(X), dtype=float)
 
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, (tr, va) in enumerate(skf.split(X, y)):
-        m = XGBWrapper(params=cfg.model["params"]).fit(X.iloc[tr], y[tr])
+    # Select model type
+    model_type = cfg.model.get("type", "xgb")
+    if model_type == "catboost":
+        ModelClass = CatBoostWrapper
+    elif model_type == "lightgbm":
+        ModelClass = LGBMWrapper
+    else:
+        ModelClass = XGBWrapper
+
+    for i, (tr, va) in enumerate(splits):
+        m = ModelClass(params=cfg.model["params"]).fit(X.iloc[tr], y[tr])
         p = m.predict_proba(X.iloc[va])
         if p.ndim == 2:
             p = p[:, 1]
@@ -48,9 +76,9 @@ def train_one_flag(
         joblib.dump(m.model, model_dir / f"model_{flag}_{i}.pkl")
         log.info(f"[{flag}] fold {i} AUC={roc_auc_score(y[va], p):.5f}")
 
-    # 보정기(Platt): OOF logit → y 로 로지스틱 회귀
-    cal = LogisticRegression(max_iter=500)
-    cal.fit(_logit(oof).reshape(-1, 1), y)
+    # 보정기(Isotonic): OOF 확률 → y 로 단조 회귀 (Platt보다 robust)
+    cal = IsotonicRegression(out_of_bounds='clip')
+    cal.fit(oof, y)
     joblib.dump(cal, model_dir / f"cal_{flag}.pkl")
 
     # 리포트용 점수
@@ -66,6 +94,13 @@ def train_one_flag(
     (model_dir / f"feature_cols_{flag}.json").write_text(
         json.dumps(feats, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    # Save imputation statistics (median of training data)
+    impute_stats = X[feats].median().to_dict()
+    (model_dir / f"impute_{flag}.json").write_text(
+        json.dumps(impute_stats, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    log.info(f"Saved imputation statistics for {flag}")
     
     # Save test-specific results
     results = {
@@ -142,6 +177,15 @@ def main(argv=None):
     # Store results for summary
     all_results = {}
 
+    # Read validation strategy from config
+    use_time_split = cfg.validation.get('strategy') == 'time_split'
+    test_ratio = cfg.validation.get('test_ratio', 0.2)
+
+    if use_time_split:
+        log.info(f"Using time-based validation (last {test_ratio*100:.0f}% as validation)")
+    else:
+        log.info(f"Using StratifiedKFold with {args.folds} folds")
+
     # Load or prepare data
     if args.prepared_data:
         # Use pre-prepared data (fast path)
@@ -150,7 +194,10 @@ def main(argv=None):
 
         for flag in ("A", "B"):
             X, feats, y = load_prepared_data(prepared_dir, flag)
-            result = train_one_flag(X, y, feats, cfg, flag, n_splits=args.folds)
+            result = train_one_flag(X, y, feats, cfg, flag,
+                                   n_splits=args.folds,
+                                   use_time_split=use_time_split,
+                                   test_ratio=test_ratio)
             all_results[flag] = result
 
             # Copy imputation statistics to model directory
@@ -175,7 +222,10 @@ def main(argv=None):
                 output_dir=None  # Don't save intermediate data
             )
             X = fe_out[feats]
-            result = train_one_flag(X, y, feats, cfg, flag, n_splits=args.folds)
+            result = train_one_flag(X, y, feats, cfg, flag,
+                                   n_splits=args.folds,
+                                   use_time_split=use_time_split,
+                                   test_ratio=test_ratio)
             all_results[flag] = result
 
     # Save overall summary

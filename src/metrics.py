@@ -9,21 +9,18 @@ def brier_score(y_true, p):
     return np.mean((p - y) ** 2)
 
 
-def ece_score(y_true, p, n_bins: int = 15):
-    """Expected Calibration Error (ECE) for binary classification."""
-    p = np.clip(p, 1e-8, 1 - 1e-8)
-    y = np.asarray(y_true, dtype=float)
-    bins = np.linspace(0.0, 1.0, n_bins + 1)
-    idx = np.digitize(p, bins) - 1
-    ece = 0.0
-    for b in range(n_bins):
-        mask = idx == b
-        if not np.any(mask):
-            continue
-        conf = p[mask].mean()
-        acc = y[mask].mean()
-        w = mask.mean()
-        ece += w * abs(acc - conf)
+def ece_score(y_true, p, n_bins: int = 10):
+    """Expected Calibration Error (ECE) - Official competition implementation."""
+    from sklearn.calibration import calibration_curve
+
+    prob_true, prob_pred = calibration_curve(y_true, p, n_bins=n_bins, strategy='uniform')
+    bin_totals = np.histogram(p, bins=np.linspace(0, 1, n_bins + 1), density=False)[0]
+    non_empty_bins = bin_totals > 0
+    bin_weights = bin_totals / len(p)
+    bin_weights = bin_weights[non_empty_bins]
+    prob_true = prob_true[:len(bin_weights)]
+    prob_pred = prob_pred[:len(bin_weights)]
+    ece = np.sum(bin_weights * np.abs(prob_true - prob_pred))
     return ece
 
 

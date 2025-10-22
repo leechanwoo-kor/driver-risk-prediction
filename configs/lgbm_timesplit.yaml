@@ -1,0 +1,40 @@
+random_seed: 42
+
+paths:
+  data_dir: data
+  model_dir: model
+
+columns:
+  id: Test_id
+  test: Test
+  target: Label
+  group: PrimaryKey
+  age: Age
+  date: TestDate
+
+model:
+  name: lgbm_timesplit
+  type: lightgbm
+  per_test: true
+  params:
+    objective: binary
+    metric: auc
+    boosting_type: gbdt
+    num_leaves: 31
+    learning_rate: 0.05
+    n_estimators: 300
+    max_depth: 6
+    min_child_samples: 20
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+    verbose: -1
+    n_jobs: -1
+
+# Time-based validation (최근 20%를 validation으로)
+validation:
+  strategy: time_split  # time_split or stratified_kfold
+  test_ratio: 0.2       # 최근 20% 데이터를 validation으로
