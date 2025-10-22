@@ -25,3 +25,19 @@ def ece_score(y_true, p, n_bins: int = 15):
         w = mask.mean()
         ece += w * abs(acc - conf)
     return ece
+
+
+def competition_score(y_true, p):
+    """
+    Calculate competition metric: 0.5*(1-AUC) + 0.25*Brier + 0.25*ECE
+    Returns: (score, auc, brier, ece)
+    """
+    from sklearn.metrics import roc_auc_score
+
+    auc = roc_auc_score(y_true, p)
+    brier = brier_score(y_true, p)
+    ece = ece_score(y_true, p)
+
+    score = 0.5 * (1 - auc) + 0.25 * brier + 0.25 * ece
+
+    return score, auc, brier, ece
